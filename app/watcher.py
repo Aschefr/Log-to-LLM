@@ -1,24 +1,31 @@
-import asyncio
 import os
 import time
-from app.database import all_rules, set_last_alert, add_alert
-from app.ollama_client import analyze
+import asyncio
+import json
+from app.database import all_rules, get_setting, set_last_alert, add_alert
+from app.ollama_client import ask_ollama
 from app.notifier import notify
+
+# ── Mots-clés par défaut ──
+DEFAULT_KEYWORDS = [
+    "ERROR", "CRITICAL", "FATAL", "panic", "segfault",
+    "exception", "timeout", "refused", "denied", "failed",
+    "out of memory", "disk full", "connection reset",
+]
 
 
 class Watcher:
     def __init__(self):
-        self._pos: dict[str, int] = {}
-        self._ino: dict[str, int] = {}
-        self._run = False
-        self._task: asyncio.Task | None = None
+        self._task = None
+        self._rules = []
+        self._positions = {}
+        self._inodes = {}
 
     async def start(self):
-        self._run = True
+        await self.reload_rules()
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self):
-        self._run = False
         if self._task:
             self._task.cancel()
             try:
@@ -26,87 +33,119 @@ class Watcher:
             except asyncio.CancelledError:
                 pass
 
+    async def reload_rules(self):
+        self._rules = all_rules()
+
+    async def reload_settings(self):
+        pass
+
+    async def force_analyze(self, rid):
+        for r in self._rules:
+            if r["id"] == rid:
+                await self._scan_rule(r)
+                return
+        raise ValueError(f"Règle {rid} introuvable")
+
     async def _loop(self):
-        while self._run:
+        while True:
             try:
-                for rule in all_rules():
-                    if rule["enabled"]:
-                        await self._check(rule)
+                for r in self._rules:
+                    if r["enabled"]:
+                        await self._scan_rule(r)
+                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 break
-            except Exception as exc:
-                print(f"[WATCHER] {exc}")
-            await asyncio.sleep(1)
+            except Exception:
+                await asyncio.sleep(1)
 
-    async def _check(self, rule: dict):
+    async def _scan_rule(self, rule):
         path = rule["log_path"]
+        rid = rule["id"]
+        mode = rule.get("mode", "keyword")
+        keywords = rule.get("keywords", [])
+        ctx_n = rule.get("context_lines", 10)
+        debounce = rule.get("debounce", 30)
+
+        if not os.path.isfile(path):
+            return
+
         try:
-            if not os.path.exists(path):
-                self._pos.pop(path, None)
-                self._ino.pop(path, None)
-                return
+            st = os.stat(path)
+        except (FileNotFoundError, PermissionError):
+            return
 
-            stat = os.stat(path)
-            ino = stat.st_ino
-            size = stat.st_size
+        cur_inode = st.st_ino
+        cur_size = st.st_size
 
-            if self._ino.get(path) is not None and (
-                ino != self._ino[path] or size < self._pos.get(path, 0)
-            ):
-                self._pos[path] = 0
+        # Rotation détectée
+        if self._inodes.get(rid) != cur_inode or cur_size < self._positions.get(rid, 0):
+            self._positions[rid] = 0
+            self._inodes[rid] = cur_inode
 
-            self._ino[path] = ino
-            pos = self._pos.get(path, 0)
+        offset = self._positions.get(rid, 0)
 
-            if size <= pos:
-                return
-
-            with open(path, "r", errors="replace") as fh:
-                fh.seek(pos)
-                new_data = fh.read()
-                self._pos[path] = fh.tell()
-
-            lines = new_data.splitlines()
-            buf: list[str] = []
-
-            for line in lines:
-                for kw in rule["keywords"]:
-                    if kw.lower() in line.lower():
-                        now = time.time()
-                        if (now - rule["last_alert"]) < rule["debounce"]:
-                            return
-                        ctx = "\n".join(buf[-rule["context_lines"]:]) if buf else "(pas de contexte)"
-                        set_last_alert(rule["id"], now)
-                        resp = await analyze(path, ctx, line)
-                        notified = await notify(line, resp, path, now)
-                        add_alert(rule["id"], path, line, ctx, resp, notified)
-                        break
-                buf.append(line)
-                if len(buf) > 200:
-                    buf = buf[-200:]
-        except PermissionError:
-            print(f"[WATCHER] Permission refusée: {path}")
-        except Exception as exc:
-            print(f"[WATCHER] {path}: {exc}")
-
-    async def force(self, rid: int) -> dict:
-        rules = all_rules()
-        rule = next((r for r in rules if r["id"] == rid), None)
-        if not rule:
-            return {"error": "Règle introuvable"}
-        path = rule["log_path"]
         try:
-            if not os.path.exists(path):
-                return {"error": f"Fichier introuvable: {path}"}
-            with open(path, "r", errors="replace") as fh:
-                all_lines = fh.readlines()
-            if not all_lines:
-                return {"error": "Fichier vide"}
-            tail = all_lines[-(rule["context_lines"] + 10):]
-            ctx = "".join(tail[:-1])
-            trig = tail[-1].strip()
-            resp = await analyze(path, ctx, trig)
-            add_alert(rule["id"], path, trig, ctx, resp, False)
-            return {"ok": True, "line": trig, "ai_resp": resp}
-        except Exception as exc:
-            return {"error": str(exc)}
+            with open(path, "r", errors="replace") as f:
+                f.seek(offset)
+                new_lines = f.readlines()
+                self._positions[rid] = f.tell()
+        except (PermissionError, OSError):
+            return
+
+        if not new_lines:
+            return
+
+        # Mode "every" : déclencher sur chaque nouvelle ligne
+        if mode == "every":
+            for line in new_lines:
+                line = line.rstrip("\n")
+                if not line.strip():
+                    continue
+                now = time.time()
+                if now - rule.get("last_alert", 0) < debounce:
+                    continue
+                ctx = self._get_context(path, offset, ctx_n)
+                await self._process_alert(rid, path, line, ctx)
+            return
+
+        # Mode "keyword" : filtrer par mots-clés
+        kw_lower = [k.lower() for k in keywords]
+        for line in new_lines:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            if any(k in line.lower() for k in kw_lower):
+                now = time.time()
+                if now - rule.get("last_alert", 0) < debounce:
+                    continue
+                ctx = self._get_context(path, offset, ctx_n)
+                await self._process_alert(rid, path, line, ctx)
+
+    def _get_context(self, path, current_offset, n):
+        try:
+            with open(path, "r", errors="replace") as f:
+                f.seek(0, 2)
+                total = f.tell()
+                start = max(0, current_offset - 2048)
+                f.seek(start)
+                chunk = f.read()
+                lines = chunk.splitlines()
+                return "\n".join(lines[-n:])
+        except Exception:
+            return ""
+
+    async def _process_alert(self, rid, path, line, ctx):
+        host = get_setting("ollama_host")
+        model = get_setting("ollama_model")
+        prompt = get_setting("system_prompt")
+
+        ai_resp = ""
+        if host and model:
+            ai_resp = await ask_ollama(host, model, prompt, line, ctx)
+
+        notified = False
+        if get_setting("smtp_enabled") == "true" or get_setting("apprise_enabled") == "true":
+            notified = await notify(line, ai_resp)
+
+        add_alert(rid, path, line, ctx, ai_resp, notified)
+        set_last_alert(rid, time.time())

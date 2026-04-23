@@ -3,13 +3,46 @@ services:
     build: .
     container_name: sentinel
     restart: unless-stopped
+
+    # Interface web → http://localhost:10911
+    # Changez le premier chiffre si le port est occupé (ex: "8080:10911")
     ports:
       - "10911:10911"
+
+    # Décommentez pour joindre Ollama sur la machine hôte
+    # Puis dans la GUI → Config IA → http://host.docker.internal:11434
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
     volumes:
+      # Base SQLite (paramètres, règles, alertes) — persiste automatiquement
       - sentinel-data:/app/data
+
+      # Logs système → dans la GUI : /logs/syslog, /logs/kern.log, etc.
       - /var/log:/logs:ro
+
+      # ── Exemples : décommentez et adaptez ──
+      # Logs Nginx → dans la GUI : /nginx-logs/error.log
+      # - /var/log/nginx:/nginx-logs:ro
+
+      # Logs app perso → dans la GUI : /app-logs/app.log
+      # - /home/user/mon-app/logs:/app-logs:ro
+
+      # Logs PM2 → dans la GUI : /pm2-logs/serveur-out.log
+      # - /home/user/.pm2/logs:/pm2-logs:ro
+
     environment:
       - TZ=Europe/Paris
 
+    # Décommentez si Ollama est dans un autre conteneur
+    # Puis dans la GUI → Config IA → http://ollama:11434
+    # networks:
+    #   - mon-reseau
+
 volumes:
   sentinel-data:
+
+# Réseau partagé avec Ollama (si conteneur séparé)
+# networks:
+#   mon-reseau:
+#     driver: bridge

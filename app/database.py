@@ -27,6 +27,7 @@ def init_db():
         "name TEXT NOT NULL, "
         "log_path TEXT NOT NULL UNIQUE, "
         "keywords TEXT NOT NULL DEFAULT '[]', "
+        "mode TEXT NOT NULL DEFAULT 'keyword', "
         "context_lines INTEGER NOT NULL DEFAULT 10, "
         "enabled INTEGER NOT NULL DEFAULT 1, "
         "debounce INTEGER NOT NULL DEFAULT 30, "
@@ -105,13 +106,13 @@ def all_rules():
     ]
 
 
-def add_rule(name, log_path, keywords, context_lines, debounce=30):
+def add_rule(name, log_path, keywords, mode, context_lines, debounce=30):
     c = _db()
     c.execute(
         "INSERT INTO rules "
-        "(name, log_path, keywords, context_lines, enabled, debounce) "
-        "VALUES (?, ?, ?, ?, 1, ?)",
-        (name, log_path, json.dumps(keywords), context_lines, debounce),
+        "(name, log_path, keywords, mode, context_lines, enabled, debounce) "
+        "VALUES (?, ?, ?, ?, ?, 1, ?)",
+        (name, log_path, json.dumps(keywords), mode, context_lines, debounce),
     )
     c.commit()
     rid = c.lastrowid
@@ -119,14 +120,14 @@ def add_rule(name, log_path, keywords, context_lines, debounce=30):
     return rid
 
 
-def upd_rule(rid, name, log_path, keywords, context_lines, enabled, debounce=30):
+def upd_rule(rid, name, log_path, keywords, mode, context_lines, enabled, debounce=30):
     c = _db()
     c.execute(
         "UPDATE rules SET name = ?, log_path = ?, keywords = ?, "
-        "context_lines = ?, enabled = ?, debounce = ? WHERE id = ?",
+        "mode = ?, context_lines = ?, enabled = ?, debounce = ? WHERE id = ?",
         (
             name, log_path, json.dumps(keywords),
-            context_lines, 1 if enabled else 0, debounce, rid,
+            mode, context_lines, 1 if enabled else 0, debounce, rid,
         ),
     )
     c.commit()

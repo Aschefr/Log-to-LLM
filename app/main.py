@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.database import (
@@ -49,10 +49,11 @@ async def api_settings():
 
 
 @app.post("/api/settings")
-async def api_save_settings(data: dict):
-    for key, value in data.items():
-        set_setting(key, value)
-    return {"status": "ok"}
+async def api_settings_save(data: dict):
+    for k, v in data.items():
+        set_setting(k, v)
+    await WATCHER.reload_settings()
+    return {"ok": True}
 
 
 @app.get("/api/rules")
@@ -61,72 +62,123 @@ async def api_rules():
 
 
 @app.post("/api/rules")
-async def api_add_rule(
+async def api_rules_add(
     name: str,
     log_path: str,
     keywords: list[str],
+    mode: str = "keyword",
     context_lines: int = 10,
     debounce: int = 30,
 ):
-    if not name or not log_path or not keywords:
-        raise HTTPException(400, "Champs requis manquants")
-    return {
-        "status": "ok",
-        "id": add_rule(name, log_path, keywords, context_lines, debounce),
-    }
+    if mode not in ("keyword", "every"):
+        raise HTTPException(400, "mode must be 'keyword' or 'every'")
+    rid = add_rule(name, log_path, keywords, mode, context_lines, debounce)
+    await WATCHER.reload_rules()
+    return {"id": rid}
 
 
 @app.put("/api/rules/{rid}")
-async def api_upd_rule(
+async def api_rules_upd(
     rid: int,
     name: str,
     log_path: str,
     keywords: list[str],
+    mode: str = "keyword",
     context_lines: int = 10,
     enabled: bool = True,
     debounce: int = 30,
 ):
-    upd_rule(rid, name, log_path, keywords, context_lines, enabled, debounce)
-    return {"status": "ok"}
+    if mode not in ("keyword", "every"):
+        raise HTTPException(400, "mode must be 'keyword' or 'every'")
+    upd_rule(rid, name, log_path, keywords, mode, context_lines, enabled, debounce)
+    await WATCHER.reload_rules()
+    return {"ok": True}
 
 
 @app.delete("/api/rules/{rid}")
-async def api_del_rule(rid: int):
+async def api_rules_del(rid: int):
     del_rule(rid)
-    return {"status": "ok"}
+    await WATCHER.reload_rules()
+    return {"ok": True}
 
 
 @app.post("/api/rules/{rid}/force-analyze")
-async def api_force(rid: int):
-    result = await WATCHER.force(rid)
-    if "error" in result:
-        raise HTTPException(400, result["error"])
-    return result
+async def api_rules_force(rid: int):
+    await WATCHER.force_analyze(rid)
+    return {"ok": True}
 
 
 @app.get("/api/alerts")
-async def api_alerts(limit: int = 100, offset: int = 0):
+async def api_alerts(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     return get_alerts(limit, offset)
 
 
 @app.delete("/api/alerts/{aid}")
-async def api_del_alert(aid: int):
+async def api_alerts_del(aid: int):
     del_alert(aid)
-    return {"status": "ok"}
+    return {"ok": True}
 
 
 @app.delete("/api/alerts")
-async def api_clear_alerts():
+async def api_alerts_clear():
     clear_alerts()
-    return {"status": "ok"}
+    return {"ok": True}
 
 
 @app.get("/api/status")
 async def api_status():
-    import datetime
     rules = all_rules()
     return {
         "rules": len(rules),
         "active": sum(1 for r in rules if r["enabled"]),
-        "ts": datetime.datetime.now().isoformat(),
+        "ts": __import__("time").time(),
     }
+
+
+@app.get("/api/files")
+async def api_files(path: str = "/"):
+    """Navigate les volumes montés et retourner les fichiers/dossiers lisibles."""
+    import os as _os
+
+    # Normaliser le chemin
+    if not path.startswith("/"):
+        path = "/" + path
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+
+    try:
+        entries = []
+        if not _os.path.isdir(path):
+            raise HTTPException(404, f"Dossier introuvable : {path}")
+
+        for name in sorted(_os.listdir(path)):
+            full = _os.path.join(path, name)
+            try:
+                st = _os.stat(full)
+                is_dir = _os.path.isdir(full)
+                readable = _os.access(full, _os.R_OK)
+                entries.append(
+                    {
+                        "name": name,
+                        "type": "dir" if is_dir else "file",
+                        "size": st.st_size if not is_dir else None,
+                        "readable": readable,
+                        "path": full,
+                    }
+                )
+            except (PermissionError, OSError):
+                entries.append(
+                    {
+                        "name": name,
+                        "type": "dir" if _os.path.isdir(full) else "file",
+                        "size": None,
+                        "readable": False,
+                        "path": full,
+                    }
+                )
+        return {"path": path, "entries": entries}
+    except PermissionError:
+        raise HTTPException(403, f"Accès refusé : {path}")
