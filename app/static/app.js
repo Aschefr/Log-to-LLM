@@ -75,6 +75,7 @@ let currentPath = '/';
 function showFileBrowser() {
   $('#fb-path').style.display = 'flex';
   $('#fb-list').style.display = 'block';
+  $('#selected-file-display').style.display = 'none';
   $('#r_path').value = '';
   loadFiles('/');
 }
@@ -82,9 +83,14 @@ function showFileBrowser() {
 function showSelectedPath(path) {
   $('#fb-path').style.display = 'none';
   $('#fb-list').style.display = 'none';
+  $('#selected-file-display').style.display = 'flex';
+  $('#selected-file-path').textContent = path;
   $('#r_path').value = path;
-  $('#fb-path').textContent = path;
 }
+
+$('#btn-change-file').addEventListener('click', () => {
+  showFileBrowser();
+});
 
 async function loadFiles(path) {
   currentPath = path;
@@ -305,6 +311,43 @@ async function saveSettings(formId, label) {
 $('#f-ai').addEventListener('submit', e => { e.preventDefault(); saveSettings('#f-ai', 'Config IA'); });
 $('#f-smtp').addEventListener('submit', e => { e.preventDefault(); saveSettings('#f-smtp', 'SMTP'); });
 $('#f-apprise').addEventListener('submit', e => { e.preventDefault(); saveSettings('#f-apprise', 'Apprise'); });
+
+// ═══════════════════════════════════════════
+//  RULE FORM SUBMIT
+// ═══════════════════════════════════════════
+$('#frule').addEventListener('submit', async e => {
+  e.preventDefault();
+  const id = $('#r_id').value;
+  const name = $('#r_name').value.trim();
+  const log_path = $('#r_path').value.trim();
+  const ctx = parseInt($('#r_ctx').value) || 10;
+  const db = parseInt($('#r_db').value) || 30;
+  const mode = $('#r_mode_every').checked ? 'every' : 'keyword';
+
+  // Collect keywords
+  const kws = [];
+  $('#kw-checks').querySelectorAll('input:checked').forEach(cb => kws.push(cb.value));
+  const custom = $('#r_kw_custom').value.trim();
+  if (custom) kws.push(...custom.split(',').map(s => s.trim()).filter(Boolean));
+
+  if (!name) return toast('Nom requis', 'err');
+  if (!log_path) return toast('Sélectionnez un fichier', 'err');
+
+  const body = { name, log_path, keywords: kws, mode, context_lines: ctx, debounce: db };
+  if (id) body.enabled = true; // PUT needs enabled
+
+  try {
+    if (id) {
+      await api(`/api/rules/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      toast('Règle modifiée', 'ok');
+    } else {
+      await api('/api/rules', { method: 'POST', body: JSON.stringify(body) });
+      toast('Règle créée', 'ok');
+    }
+    closeModal();
+    loadRules();
+  } catch (err) { toast(err.message, 'err'); }
+});
 
 // ═══════════════════════════════════════════
 //  UTILS

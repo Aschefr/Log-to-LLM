@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentinel - Log-to-LLM</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,166 +12,205 @@
     <nav>
       <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
       <button class="nav-btn" data-tab="rules">Règles</button>
-      <button class="nav-btn" data-tab="ai">Configuration IA</button>
-      <button class="nav-btn" data-tab="notifications">Notifications</button>
+      <button class="nav-btn" data-tab="ai">Config IA</button>
+      <button class="nav-btn" data-tab="notif">Notifications</button>
     </nav>
   </header>
 
   <main>
-    <!-- DASHBOARD -->
+    <!-- Dashboard -->
     <section id="tab-dashboard" class="tab active">
-      <div class="tab-header">
+      <div class="hdr">
         <h2>Historique des Alertes</h2>
-        <div class="header-actions">
-          <button id="btn-refresh-alerts" class="btn btn-sm">⟳ Rafraîchir</button>
-          <button id="btn-clear-alerts" class="btn btn-sm btn-danger">🗑 Tout supprimer</button>
+        <div class="hdr-btns">
+          <button id="ref-alerts" class="btn sm">⟳ Rafraîchir</button>
+          <button id="clr-alerts" class="btn sm danger">🗑 Tout supprimer</button>
         </div>
       </div>
-      <div id="alerts-container"></div>
-      <div id="alerts-empty" class="empty-state" style="display:none;">
-        <p>Aucune alerte enregistrée.</p>
+      <div id="alerts-box"></div>
+      <div id="alerts-empty" class="empty" style="display:none">
+        <p>Aucune alerte.</p>
       </div>
     </section>
 
-    <!-- RULES -->
+    <!-- Rules -->
     <section id="tab-rules" class="tab">
-      <div class="tab-header">
+      <div class="hdr">
         <h2>Règles de Surveillance</h2>
-        <button id="btn-add-rule" class="btn">+ Nouvelle Règle</button>
+        <button id="add-rule" class="btn">+ Nouvelle Règle</button>
       </div>
-      <div id="rules-container"></div>
-      <div id="rules-empty" class="empty-state" style="display:none;">
-        <p>Aucune règle configurée. Cliquez sur <strong>+ Nouvelle Règle</strong> pour commencer.</p>
+      <div id="rules-box"></div>
+      <div id="rules-empty" class="empty" style="display:none">
+        <p>Aucune règle. Cliquez <strong>+ Nouvelle Règle</strong>.</p>
       </div>
     </section>
 
-    <!-- AI CONFIG -->
+    <!-- AI Config -->
     <section id="tab-ai" class="tab">
       <h2>Configuration IA (Ollama)</h2>
-      <form id="form-ai" class="config-form">
-        <div class="form-group">
+      <form id="f-ai" class="cfg">
+        <div class="fg">
           <label for="ollama_host">Adresse Ollama</label>
           <input type="url" id="ollama_host" placeholder="http://192.168.1.100:11434">
-          <small>URL complète incluant le port (par défaut 11434)</small>
+          <small>URL complète avec port</small>
         </div>
-        <div class="form-group">
+        <div class="fg">
           <label for="ollama_model">Modèle</label>
           <input type="text" id="ollama_model" placeholder="llama3.2">
-          <small>Nom du modèle tel qu'il apparaît dans Ollama</small>
         </div>
-        <div class="form-group">
+        <div class="fg">
           <label for="system_prompt">System Prompt</label>
-          <textarea id="system_prompt" rows="6" placeholder="Tu es un expert en analyse de logs..."></textarea>
-          <small>Instructions système envoyées à chaque requête Ollama</small>
+          <textarea id="system_prompt" rows="4"></textarea>
         </div>
-        <button type="submit" class="btn btn-primary">💾 Sauvegarder</button>
+        <button type="submit" class="btn">💾 Sauvegarder</button>
       </form>
     </section>
 
-    <!-- NOTIFICATIONS -->
-    <section id="tab-notifications" class="tab">
-      <h2>Configuration des Notifications</h2>
-
-      <div class="config-section">
+    <!-- Notifications -->
+    <section id="tab-notif" class="tab">
+      <h2>Notifications</h2>
+      <form id="f-smtp" class="cfg">
         <h3>📧 Email (SMTP)</h3>
-        <form id="form-smtp" class="config-form">
-          <div class="form-group checkbox-group">
-            <input type="checkbox" id="smtp_enabled">
-            <label for="smtp_enabled">Activer les notifications par email</label>
-          </div>
-          <div class="form-group">
-            <label for="smtp_server">Serveur SMTP</label>
-            <input type="text" id="smtp_server" placeholder="smtp.gmail.com">
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="smtp_port">Port</label>
-              <input type="number" id="smtp_port" value="587">
-            </div>
-            <div class="form-group checkbox-group">
-              <input type="checkbox" id="smtp_tls" checked>
-              <label for="smtp_tls">TLS</label>
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="smtp_user">Identifiant</label>
-            <input type="text" id="smtp_user" placeholder="user@example.com">
-          </div>
-          <div class="form-group">
-            <label for="smtp_password">Mot de passe</label>
-            <input type="password" id="smtp_password" placeholder="••••••••">
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="smtp_from">Expéditeur</label>
-              <input type="email" id="smtp_from" placeholder="sentinel@example.com">
-            </div>
-            <div class="form-group">
-              <label for="smtp_to">Destinataire</label>
-              <input type="email" id="smtp_to" placeholder="admin@example.com">
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary">💾 Sauvegarder SMTP</button>
-        </form>
-      </div>
+        <div class="fg chk">
+          <label><input type="checkbox" id="smtp_enabled"> Activer</label>
+        </div>
+        <div class="fg">
+          <label for="smtp_server">Serveur</label>
+          <input type="text" id="smtp_server">
+        </div>
+        <div class="fg">
+          <label for="smtp_port">Port</label>
+          <input type="number" id="smtp_port" value="587">
+        </div>
+        <div class="fg chk">
+          <label><input type="checkbox" id="smtp_tls" checked> TLS</label>
+        </div>
+        <div class="fg">
+          <label for="smtp_user">Utilisateur</label>
+          <input type="text" id="smtp_user">
+        </div>
+        <div class="fg">
+          <label for="smtp_password">Mot de passe</label>
+          <input type="password" id="smtp_password">
+        </div>
+        <div class="fg">
+          <label for="smtp_from">De</label>
+          <input type="email" id="smtp_from">
+        </div>
+        <div class="fg">
+          <label for="smtp_to">À</label>
+          <input type="email" id="smtp_to">
+        </div>
+        <button type="submit" class="btn">💾 Sauvegarder SMTP</button>
+      </form>
 
-      <div class="config-section">
+      <form id="f-apprise" class="cfg">
         <h3>🔔 Apprise</h3>
-        <form id="form-apprise" class="config-form">
-          <div class="form-group checkbox-group">
-            <input type="checkbox" id="apprise_enabled">
-            <label for="apprise_enabled">Activer les notifications Apprise</label>
-          </div>
-          <div class="form-group">
-            <label for="apprise_url">URL Apprise / Webhook</label>
-            <input type="url" id="apprise_url" placeholder="http://localhost:8000/notify">
-            <small>URL de votre serveur Apprise ou webhook compatible</small>
-          </div>
-          <div class="form-group">
-            <label for="apprise_method">Méthode HTTP</label>
-            <select id="apprise_method">
-              <option value="POST">POST</option>
-              <option value="GET">GET</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary">💾 Sauvegarder Apprise</button>
-        </form>
-      </div>
+        <div class="fg chk">
+          <label><input type="checkbox" id="apprise_enabled"> Activer</label>
+        </div>
+        <div class="fg">
+          <label for="apprise_url">URL</label>
+          <input type="url" id="apprise_url">
+        </div>
+        <div class="fg">
+          <label for="apprise_method">Méthode</label>
+          <select id="apprise_method">
+            <option>POST</option>
+            <option>GET</option>
+          </select>
+        </div>
+        <button type="submit" class="btn">💾 Sauvegarder Apprise</button>
+      </form>
     </section>
   </main>
 
-  <!-- MODAL: Add/Edit Rule -->
-  <div id="modal-rule" class="modal" style="display:none;">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <h3 id="modal-rule-title">Nouvelle Règle</h3>
-      <form id="form-rule">
-        <input type="hidden" id="rule_id">
-        <div class="form-group">
-          <label for="rule_name">Nom</label>
-          <input type="text" id="rule_name" required placeholder="Ex: Serveur Web">
+  <!-- Modal Règle -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="backdrop"></div>
+    <div class="mcontent">
+      <h3 id="mtitle">Nouvelle Règle</h3>
+      <form id="frule">
+        <input type="hidden" id="r_id">
+
+        <div class="fg">
+          <label for="r_name">Nom</label>
+          <input type="text" id="r_name" required>
         </div>
-        <div class="form-group">
-          <label for="rule_log_path">Chemin du fichier log</label>
-          <input type="text" id="rule_log_path" required placeholder="/logs/app_server.log">
-          <small>Chemin tel que vu depuis l'intérieur du conteneur Docker</small>
-        </div>
-        <div class="form-group">
-          <label for="rule_keywords">Mots-clés déclencheurs</label>
-          <input type="text" id="rule_keywords" required placeholder="Error, Critical, Failed">
-          <small>Séparés par des virgules. La recherche est insensible à la casse.</small>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="rule_context">Lignes de contexte</label>
-            <input type="number" id="rule_context" value="10" min="1" max="200">
+
+        <!-- Navigateur de fichiers -->
+        <div class="fg">
+          <label>Chemin du log</label>
+          <div class="file-browser">
+            <div class="fb-path" id="fb-path">/</div>
+            <div class="fb-list" id="fb-list"></div>
           </div>
-          <div class="form-group">
-            <label for="rule_debounce">Anti-flood (sec)</label>
-            <input type="number" id="rule_debounce" value="30" min="5" max="3600">
-            <small>Secondes minimales entre deux alertes sur ce fichier</small>
+          <!-- Affichage du fichier sélectionné -->
+          <div id="selected-file-display" class="selected-file" style="display:none">
+            <span id="selected-file-path"></span>
+            <button type="button" id="btn-change-file" class="btn sm ghost">Changer</button>
+          </div>
+          <input type="hidden" id="r_path">
+        </div>
+
+        <!-- Mots-clés -->
+        <div class="fg">
+          <label>Mots-clés</label>
+          <div class="kw-section">
+            <div class="chk-group" id="kw-checks">
+              <label class="chk-item"><input type="checkbox" value="ERROR"><span>ERROR</span></label>
+              <label class="chk-item"><input type="checkbox" value="CRITICAL"><span>CRITICAL</span></label>
+              <label class="chk-item"><input type="checkbox" value="FATAL"><span>FATAL</span></label>
+              <label class="chk-item"><input type="checkbox" value="panic"><span>panic</span></label>
+              <label class="chk-item"><input type="checkbox" value="segfault"><span>segfault</span></label>
+              <label class="chk-item"><input type="checkbox" value="out of memory"><span>out of memory</span></label>
+              <label class="chk-item"><input type="checkbox" value="timeout"><span>timeout</span></label>
+              <label class="chk-item"><input type="checkbox" value="connection refused"><span>connection refused</span></label>
+              <label class="chk-item"><input type="checkbox" value="permission denied"><span>permission denied</span></label>
+              <label class="chk-item"><input type="checkbox" value="failed"><span>failed</span></label>
+              <label class="chk-item"><input type="checkbox" value="denied"><span>denied</span></label>
+              <label class="chk-item"><input type="checkbox" value="invalid"><span>invalid</span></label>
+              <label class="chk-item"><input type="checkbox" value="unauthorized"><span>unauthorized</span></label>
+              <label class="chk-item"><input type="checkbox" value="forbidden"><span>forbidden</span></label>
+              <label class="chk-item"><input type="checkbox" value="not found"><span>not found</span></label>
+              <label class="chk-item"><input type="checkbox" value="500"><span>500</span></label>
+              <label class="chk-item"><input type="checkbox" value="502"><span>502</span></label>
+              <label class="chk-item"><input type="checkbox" value="503"><span>503</span></label>
+              <label class="chk-item"><input type="checkbox" value="504"><span>504</span></label>
+            </div>
+            <div class="fg">
+              <label for="r_kw_custom">Personnalisé</label>
+              <input type="text" id="r_kw_custom" placeholder="mot1,mot2,mot3">
+            </div>
           </div>
         </div>
-        <div class="modal-actions">
-          <button type="submit" class="btn btn-primary">💾 Enregistrer</button>
-          <button type
+
+        <!-- Mode -->
+        <div class="fg chk">
+          <label><input type="checkbox" id="r_mode_every"> Mode "Je ne sais pas" (toutes lignes)</label>
+        </div>
+
+        <!-- Contexte -->
+        <div class="fg">
+          <label for="r_ctx">Lignes de contexte</label>
+          <input type="number" id="r_ctx" value="10" min="0" max="100">
+        </div>
+
+        <!-- Debounce -->
+        <div class="fg">
+          <label for="r_db">Anti-flood (s)</label>
+          <input type="number" id="r_db" value="30" min="0">
+        </div>
+
+        <div class="macts">
+          <button type="submit" class="btn">💾 Enregistrer</button>
+          <button type="button" id="m_cancel" class="btn ghost">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
