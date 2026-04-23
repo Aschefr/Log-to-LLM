@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.database import (
@@ -144,23 +144,62 @@ async def api_status():
 
 @app.get("/api/files")
 async def api_files(path: str = "/"):
+    """Navigate only within configured watch roots."""
     import os as _os
 
+    # Get watch roots from settings (comma-separated)
+    roots_str = all_settings().get("watch_roots", "/logs")
+    roots = [r.strip() for r in roots_str.split(",") if r.strip()]
+    if not roots:
+        roots = ["/logs"]
+
+    # Normalize path
     if not path.startswith("/"):
         path = "/" + path
-    if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
+    path = path.rstrip("/") or "/"
 
-    try:
+    # Check if path is within allowed roots
+    allowed = False
+    for root in roots:
+        if path == root or path.startswith(root + "/"):
+            allowed = True
+            break
+
+    if not allowed and path != "/":
+        raise HTTPException(403, "Hors des répertoires autorisés")
+
+    # If at root, show only the watch roots
+    if path == "/":
         entries = []
+        for root in roots:
+            if _os.path.isdir(root):
+                entries.append({
+                    "name": root.lstrip("/"),
+                    "path": root,
+                    "is_dir": True,
+                    "readable": True,
+                    "size": 0,
+                })
+        return {"path": "/", "parent": None, "entries": entries}
+
+    # List directory contents
+    try:
         if not _os.path.isdir(path):
             raise HTTPException(404, "Dossier introuvable")
 
+        entries = []
         for name in sorted(_os.listdir(path)):
             full = _os.path.join(path, name)
             is_dir = _os.path.isdir(full)
+            readable = _os.access(full, _os.R_OK) if not is_dir else True
             size = _os.path.getsize(full) if not is_dir else 0
-            entries.append({"name": name, "is_dir": is_dir, "size": size})
+            entries.append({
+                "name": name,
+                "path": full,
+                "is_dir": is_dir,
+                "readable": readable,
+                "size": size,
+            })
 
         parent = _os.path.dirname(path) if path != "/" else None
         return {"path": path, "parent": parent, "entries": entries}

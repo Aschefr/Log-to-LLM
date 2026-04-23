@@ -1,207 +1,144 @@
+// ═══════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════
 const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
+const api = (url, opts = {}) => fetch(url, {
+  headers: { 'Content-Type': 'application/json', ...opts.headers },
+  ...opts,
+}).then(r => {
+  if (!r.ok) throw new Error(r.status === 422 ? 'Données invalides' : r.statusText);
+  return r.json();
+});
 
-// ── Tabs ──
-$$('.nav-btn').forEach(b => b.addEventListener('click', () => {
-  $$('.nav-btn').forEach(x => x.classList.remove('active'));
-  $$('.tab').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  $(`#tab-${b.dataset.tab}`).classList.add('active');
-}));
-
-// ── Toasts ──
 function toast(msg, type = 'info') {
   const t = document.createElement('div');
   t.className = `toast ${type}`;
   t.textContent = msg;
   $('#toasts').appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
-
-// ── Fetch helper ──
-async function api(path, opts = {}) {
-  const r = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
+  setTimeout(() => t.remove(), 3000);
 }
 
 // ═══════════════════════════════════════════
-//  FILE BROWSER
+//  TABS
 // ═══════════════════════════════════════════
-let fbCurrentPath = '/';
-let fbSelectedFile = '';
-
-async function loadFiles(path = '/') {
-  fbCurrentPath = path;
-  $('#fb-path').textContent = path;
-  $('#fb-list').innerHTML = '<div class="fb-item"><span class="spin"></span> Chargement…</div>';
-
-  try {
-    const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
-    renderFileList(data.entries);
-  } catch (e) {
-    $('#fb-list').innerHTML = `<div class="fb-item" style="color:var(--err)">Erreur : ${e.message}</div>`;
-  }
-}
-
-function renderFileList(entries) {
-  const box = $('#fb-list');
-  box.innerHTML = '';
-
-  if (!entries.length) {
-    box.innerHTML = '<div class="fb-item" style="color:var(--dim)">Dossier vide</div>';
-    return;
-  }
-
-  entries.forEach(e => {
-    const div = document.createElement('div');
-    div.className = 'fb-item';
-    if (e.type === 'file' && !e.readable) div.classList.add('locked');
-
-    const icon = e.type === 'dir' ? '📁' : (e.readable ? '📄' : '🔒');
-    const size = e.type === 'dir' ? '' : (e.size != null ? fmtSize(e.size) : '');
-
-    div.innerHTML = `
-      <span class="icon">${icon}</span>
-      <span class="fname">${e.name}</span>
-      <span class="fsize">${size}</span>
-    `;
-
-    if (e.type === 'dir') {
-      div.addEventListener('click', () => loadFiles(e.path));
-    } else if (e.readable) {
-      div.addEventListener('click', () => selectFile(e.path, div));
-    }
-
-    box.appendChild(div);
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    $(`#tab-${btn.dataset.tab}`).classList.add('active');
   });
-}
-
-function selectFile(path, el) {
-  fbSelectedFile = path;
-  $$('.fb-item').forEach(x => x.classList.remove('selected'));
-  el.classList.add('selected');
-  $('#r_path').value = path;
-}
-
-function fmtSize(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-  return (b / 1048576).toFixed(1) + ' MB';
-}
-
-// Back button in file browser
-$('#fb-path').addEventListener('click', () => {
-  if (fbCurrentPath === '/') return;
-  const parts = fbCurrentPath.split('/').filter(Boolean);
-  parts.pop();
-  loadFiles('/' + parts.join('/') || '/');
 });
 
 // ═══════════════════════════════════════════
-//  RULE MODAL
+//  MODAL
 // ═══════════════════════════════════════════
-const modal = $('#modal');
-
 function openModal(rule = null) {
-  modal.style.display = 'flex';
   $('#mtitle').textContent = rule ? 'Modifier la Règle' : 'Nouvelle Règle';
   $('#r_id').value = rule?.id || '';
   $('#r_name').value = rule?.name || '';
   $('#r_path').value = rule?.log_path || '';
   $('#r_ctx').value = rule?.context_lines ?? 10;
   $('#r_db').value = rule?.debounce ?? 30;
+  $('#r_mode_every').checked = rule?.mode === 'every';
 
-  // Mode "every"
-  const isEvery = rule?.mode === 'every';
-  $('#r_mode_every').checked = isEvery;
-
-  // Keywords checkboxes
+  // Keywords
   const kws = rule?.keywords || [];
-  $$('#kw-checks input').forEach(cb => {
+  $('#kw-checks').querySelectorAll('input').forEach(cb => {
     cb.checked = kws.includes(cb.value);
   });
   $('#r_kw_custom').value = '';
 
-  // Reset file browser
-  fbSelectedFile = rule?.log_path || '';
+  // File browser
   if (rule?.log_path) {
-    fbCurrentPath = '/';
-    loadFiles('/');
-    setTimeout(() => {
-      // Try to highlight selected
-      $$('.fb-item').forEach(el => {
-        if (el.querySelector('.fname')?.textContent === rule.log_path.split('/').pop()) {
-          selectFile(rule.log_path, el);
-        }
-      });
-    }, 300);
+    showSelectedPath(rule.log_path);
   } else {
-    loadFiles('/');
+    showFileBrowser();
   }
+
+  $('#modal').style.display = 'flex';
 }
 
 function closeModal() {
-  modal.style.display = 'none';
+  $('#modal').style.display = 'none';
 }
 
 $('#add-rule').addEventListener('click', () => openModal());
 $('#m_cancel').addEventListener('click', closeModal);
-$('.backdrop').addEventListener('click', closeModal);
+$('#modal .backdrop').addEventListener('click', closeModal);
 
-// Collect keywords from checkboxes + custom input
-function collectKeywords() {
-  const kws = [];
-  $$('#kw-checks input:checked').forEach(cb => kws.push(cb.value));
-  const custom = $('#r_kw_custom').value.trim();
-  if (custom) {
-    custom.split(',').map(s => s.trim()).filter(Boolean).forEach(s => kws.push(s));
-  }
-  return kws;
+// ═══════════════════════════════════════════
+//  FILE BROWSER
+// ═══════════════════════════════════════════
+let currentPath = '/';
+
+function showFileBrowser() {
+  $('#fb-path').style.display = 'flex';
+  $('#fb-list').style.display = 'block';
+  $('#r_path').value = '';
+  loadFiles('/');
 }
 
-// Submit rule form
-$('#frule').addEventListener('submit', async e => {
-  e.preventDefault();
-  const id = $('#r_id').value;
-  const name = $('#r_name').value.trim();
-  const path = $('#r_path').value;
-  const isEvery = $('#r_mode_every').checked;
-  const mode = isEvery ? 'every' : 'keyword';
-  const keywords = isEvery ? [] : collectKeywords();
-  const ctx = parseInt($('#r_ctx').value) || 10;
-  const db = parseInt($('#r_db').value) || 30;
+function showSelectedPath(path) {
+  $('#fb-path').style.display = 'none';
+  $('#fb-list').style.display = 'none';
+  $('#r_path').value = path;
+  $('#fb-path').textContent = path;
+}
 
-  if (!name) return toast('Nom requis', 'err');
-  if (!path) return toast('Sélectionnez un fichier log', 'err');
-  if (!isEvery && !keywords.length) return toast('Sélectionnez au moins un mot-clé', 'err');
-
+async function loadFiles(path) {
+  currentPath = path;
+  $('#fb-path').textContent = path;
   try {
-    if (id) {
-      await api(`/api/rules/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name, log_path: path, keywords, mode, context_lines: ctx, enabled: true, debounce: db }),
-      });
-      toast('Règle modifiée', 'ok');
-    } else {
-      await api('/api/rules', {
-        method: 'POST',
-        body: JSON.stringify({ name, log_path: path, keywords, mode, context_lines: ctx, debounce: db }),
-      });
-      toast('Règle ajoutée', 'ok');
+    const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
+    const list = $('#fb-list');
+    list.innerHTML = '';
+
+    // Parent button
+    if (data.parent) {
+      const parentBtn = document.createElement('div');
+      parentBtn.className = 'fb-item';
+      parentBtn.innerHTML = `<span class="icon">⬆️</span><span class="fname">..</span>`;
+      parentBtn.addEventListener('click', () => loadFiles(data.parent));
+      list.appendChild(parentBtn);
     }
-    closeModal();
-    loadRules();
+
+    // Entries
+    data.entries.forEach(item => {
+      const div = document.createElement('div');
+      div.className = `fb-item ${!item.readable ? 'locked' : ''}`;
+      const icon = item.is_dir ? '📁' : (item.readable ? '📄' : '🔒');
+      const size = item.is_dir ? '' : ` <span class="fsize">${formatSize(item.size)}</span>`;
+      div.innerHTML = `<span class="icon">${icon}</span><span class="fname">${item.name}</span>${size}`;
+
+      if (item.is_dir) {
+        div.addEventListener('click', () => loadFiles(item.path));
+      } else if (item.readable) {
+        div.addEventListener('click', () => {
+          showSelectedPath(item.path);
+        });
+      }
+
+      list.appendChild(div);
+    });
   } catch (err) {
     toast(err.message, 'err');
   }
-});
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) {
+    bytes /= 1024;
+    i++;
+  }
+  return `${bytes.toFixed(1)} ${units[i]}`;
+}
 
 // ═══════════════════════════════════════════
-//  RULES LIST
+//  RULES
 // ═══════════════════════════════════════════
 async function loadRules() {
   try {
@@ -218,25 +155,19 @@ async function loadRules() {
     rules.forEach(r => {
       const div = document.createElement('div');
       div.className = 'rc';
-
-      const modeLabel = r.mode === 'every' ? '🤷 Toute nouvelle ligne' : `🔑 Mots-clés (${r.keywords.length})`;
-      const kwsHtml = r.keywords.length
-        ? r.keywords.map(k => `<span>${esc(k)}</span>`).join('')
-        : '<span style="color:var(--dim)">—</span>';
-
       div.innerHTML = `
         <div class="rh">
           <span class="name">${esc(r.name)}</span>
           <label class="tog">
-            <input type="checkbox" ${r.enabled ? 'checked' : ''} data-rid="${r.id}">
+            <input type="checkbox" data-rid="${r.id}" ${r.enabled ? 'checked' : ''}>
             <span class="sl"></span>
           </label>
         </div>
-        <div class="det">📂 ${esc(r.log_path)} &nbsp;·&nbsp; ${modeLabel} &nbsp;·&nbsp; ⏱ ${r.debounce}s</div>
-        <div class="kws">${kwsHtml}</div>
+        <div class="det">📂 ${esc(r.log_path)} &nbsp;·&nbsp; 🎯 ${r.mode === 'every' ? 'Toutes lignes' : r.keywords.length + ' mots-clés'}</div>
+        <div class="kws">${r.keywords.map(k => `<span>${esc(k)}</span>`).join('')}</div>
         <div class="acts">
-          <button class="btn sm ghost" data-edit="${r.id}">✏️ Modifier</button>
-          <button class="btn sm ghost" data-force="${r.id}">🔍 Analyser</button>
+          <button class="btn sm" data-edit="${r.id}">✏️ Modifier</button>
+          <button class="btn sm" data-force="${r.id}">🔍 Analyser</button>
           <button class="btn sm danger" data-del="${r.id}">🗑 Supprimer</button>
         </div>
       `;
