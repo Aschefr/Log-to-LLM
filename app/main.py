@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.database import (
@@ -19,6 +20,25 @@ from app.watcher import Watcher
 
 WATCHER = Watcher()
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+class RuleCreate(BaseModel):
+    name: str
+    log_path: str
+    keywords: list[str]
+    mode: str = "keyword"
+    context_lines: int = 10
+    debounce: int = 30
+
+
+class RuleUpdate(BaseModel):
+    name: str
+    log_path: str
+    keywords: list[str]
+    mode: str = "keyword"
+    context_lines: int = 10
+    enabled: bool = True
+    debounce: int = 30
 
 
 @asynccontextmanager
@@ -62,35 +82,19 @@ async def api_rules():
 
 
 @app.post("/api/rules")
-async def api_rules_add(
-    name: str,
-    log_path: str,
-    keywords: list[str],
-    mode: str = "keyword",
-    context_lines: int = 10,
-    debounce: int = 30,
-):
-    if mode not in ("keyword", "every"):
+async def api_rules_add(body: RuleCreate):
+    if body.mode not in ("keyword", "every"):
         raise HTTPException(400, "mode must be 'keyword' or 'every'")
-    rid = add_rule(name, log_path, keywords, mode, context_lines, debounce)
+    rid = add_rule(body.name, body.log_path, body.keywords, body.mode, body.context_lines, body.debounce)
     await WATCHER.reload_rules()
     return {"id": rid}
 
 
 @app.put("/api/rules/{rid}")
-async def api_rules_upd(
-    rid: int,
-    name: str,
-    log_path: str,
-    keywords: list[str],
-    mode: str = "keyword",
-    context_lines: int = 10,
-    enabled: bool = True,
-    debounce: int = 30,
-):
-    if mode not in ("keyword", "every"):
+async def api_rules_upd(rid: int, body: RuleUpdate):
+    if body.mode not in ("keyword", "every"):
         raise HTTPException(400, "mode must be 'keyword' or 'every'")
-    upd_rule(rid, name, log_path, keywords, mode, context_lines, enabled, debounce)
+    upd_rule(rid, body.name, body.log_path, body.keywords, body.mode, body.context_lines, body.enabled, body.debounce)
     await WATCHER.reload_rules()
     return {"ok": True}
 
@@ -140,10 +144,8 @@ async def api_status():
 
 @app.get("/api/files")
 async def api_files(path: str = "/"):
-    """Navigate les volumes montés et retourner les fichiers/dossiers lisibles."""
     import os as _os
 
-    # Normaliser le chemin
     if not path.startswith("/"):
         path = "/" + path
     if path != "/" and path.endswith("/"):
@@ -152,33 +154,17 @@ async def api_files(path: str = "/"):
     try:
         entries = []
         if not _os.path.isdir(path):
-            raise HTTPException(404, f"Dossier introuvable : {path}")
+            raise HTTPException(404, "Dossier introuvable")
 
         for name in sorted(_os.listdir(path)):
             full = _os.path.join(path, name)
-            try:
-                st = _os.stat(full)
-                is_dir = _os.path.isdir(full)
-                readable = _os.access(full, _os.R_OK)
-                entries.append(
-                    {
-                        "name": name,
-                        "type": "dir" if is_dir else "file",
-                        "size": st.st_size if not is_dir else None,
-                        "readable": readable,
-                        "path": full,
-                    }
-                )
-            except (PermissionError, OSError):
-                entries.append(
-                    {
-                        "name": name,
-                        "type": "dir" if _os.path.isdir(full) else "file",
-                        "size": None,
-                        "readable": False,
-                        "path": full,
-                    }
-                )
-        return {"path": path, "entries": entries}
+            is_dir = _os.path.isdir(full)
+            size = _os.path.getsize(full) if not is_dir else 0
+            entries.append({"name": name, "is_dir": is_dir, "size": size})
+
+        parent = _os.path.dirname(path) if path != "/" else None
+        return {"path": path, "parent": parent, "entries": entries}
     except PermissionError:
-        raise HTTPException(403, f"Accès refusé : {path}")
+        raise HTTPException(403, "Accès refusé")
+    except Exception as e:
+        raise HTTPException(500, str(e))
