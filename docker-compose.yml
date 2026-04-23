@@ -1,0 +1,15 @@
+services:
+  sentinel:
+    build: .
+    container_name: sentinel
+    restart: unless-stopped
+    ports:
+      - "10911:10911"
+    volumes:
+      - sentinel-data:/app/data
+      - /var/log:/logs:ro
+    environment:
+      - TZ=Europe/Paris
+
+volumes:
+  sentinel-data:
